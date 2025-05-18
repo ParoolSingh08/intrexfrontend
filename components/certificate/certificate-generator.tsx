@@ -52,6 +52,26 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
   const certificateRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const [certNumber, setCertNumber] = useState('')
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null)
+
+  // Import Google Fonts in useEffect
+  useEffect(() => {
+    // Add Imperial Script and Marck Script fonts
+    const imperialLink = document.createElement('link');
+    imperialLink.href = 'https://fonts.googleapis.com/css2?family=Imperial+Script&display=swap';
+    imperialLink.rel = 'stylesheet';
+    document.head.appendChild(imperialLink);
+    
+    const marckScriptLink = document.createElement('link');
+    marckScriptLink.href = 'https://fonts.googleapis.com/css2?family=Marck+Script&display=swap';
+    marckScriptLink.rel = 'stylesheet';
+    document.head.appendChild(marckScriptLink);
+    
+    return () => {
+      document.head.removeChild(imperialLink);
+      document.head.removeChild(marckScriptLink);
+    };
+  }, []);
 
   // Calculate certificate validation date based on completion date and validity days
   const calculateValidationDate = () => {
@@ -74,13 +94,9 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
     return `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`
   }
 
-  // Generate a unique certificate number
-  const generateCertificateNumber = () => {
-    if (!registration || !trainee) return ''
-    
-    const regNumber = registration.registration_number.replace('TR-', '')
-    const randomId = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
-    return `IICTCM${regNumber}-${trainee.id}-${randomId}`
+  // Format to sentence case
+  const toSentenceCase = (text: string): string => {
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
   }
 
   // Fetch trainee and registration data
@@ -120,6 +136,26 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
         // Generate certificate number
         const certNum = `IICTCM${registrationResponse.data.registration_number.replace('TR-', '')}-${traineeId}-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`
         setCertNumber(certNum)
+        
+        // If trainee has a photo, fetch it and convert to Data URL for PDF
+        if (traineeResponse.data.photo_path) {
+          try {
+            const photoResponse = await axios.get(`${API_URL}/${traineeResponse.data.photo_path}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              },
+              responseType: 'blob'
+            });
+            
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              setPhotoDataUrl(reader.result as string);
+            };
+            reader.readAsDataURL(photoResponse.data);
+          } catch (photoError) {
+            console.error('Error fetching trainee photo:', photoError);
+          }
+        }
       } catch (error) {
         console.error('Error fetching data:', error)
         toast({
@@ -142,12 +178,14 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
     try {
       setIsGenerating(true)
       
-      // Convert certificate div to canvas
+      // Convert certificate div to canvas with better image handling
       const canvas = await html2canvas(certificateRef.current, {
         scale: 2, // Higher scale for better quality
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        imageTimeout: 15000, // Longer timeout for images
+        logging: true // Enable logging to debug image issues
       })
       
       // Create PDF
@@ -164,8 +202,8 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
       
       pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
       
-      // Save PDF
-      const fileName = `${trainee?.name.replace(/\s+/g, '_')}_Certificate_${new Date().toISOString().split('T')[0]}.pdf`
+      // Save PDF with certificate ID as filename
+      const fileName = `${certNumber}.pdf`
       pdf.save(fileName)
       
       toast({
@@ -202,6 +240,7 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
       }
       
       printWindow.document.write('<html><head><title>Certificate</title>')
+      printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Imperial+Script&family=Marck+Script&display=swap" rel="stylesheet">')
       printWindow.document.write('<style>body { margin: 0; padding: 20px; }</style>')
       printWindow.document.write('</head><body>')
       printWindow.document.write(content.outerHTML)
@@ -273,6 +312,20 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
   // Certificate verification URL
   const verificationUrl = `${window.location.origin}/certificates/verify/${certNumber}`
 
+  // Imperial Script font style for title
+  const imperialStyle = { 
+    fontFamily: "'Imperial Script', cursive", 
+    fontWeight: 700,
+    color: "#000"
+  }
+  
+  // Marck Script font style for other text
+  const marckScriptStyle = { 
+    fontFamily: "'Marck Script', cursive", 
+    fontWeight: 500,
+    lineHeight: 1 // Tightest line spacing
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -297,116 +350,113 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
         <CardContent className="p-0">
           <div 
             ref={certificateRef} 
-            className="relative w-full aspect-[1.414/1] bg-white overflow-hidden"
-            style={{ fontFamily: 'Times New Roman, serif' }}
+            className="relative w-full aspect-[1.414/1] overflow-hidden"
+            style={{ 
+              backgroundImage: "url('/background.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center"
+            }}
           >
-            {/* Watermark Logo */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-              <img 
-                src="/intrex-logo.png" 
-                alt="Watermark" 
-                className="w-2/3 h-2/3 object-contain"
-              />
+            {/* Certificate Title - moved down 0.5cm with increased spacing after */}
+            <div className="text-center pt-32">
+              <h1 
+                className="text-5xl"
+                style={imperialStyle}
+              >
+                {toSentenceCase("certificate of training")}
+              </h1>
+              <p className="text-2xl mt-4" style={marckScriptStyle}>
+                {toSentenceCase("proudly presented to")}
+              </p>
             </div>
             
-            {/* Certificate Header */}
-            <div className="flex justify-between items-start p-8">
-              <div className="flex flex-col">
-                <h2 className="text-xl font-bold uppercase">
-                  INTERNATIONAL INSPECTION
-                </h2>
-                <h2 className="text-xl font-bold uppercase">
-                  CENTRE CO. W.L.L.
-                </h2>
-                <div className="w-full h-1 bg-yellow-400 mt-1"></div>
-              </div>
-              
-              <img 
-                src="/intrex-logo.png" 
-                alt="Company Logo" 
-                className="h-16 w-auto"
-              />
-              
-              <div className="flex flex-col items-end">
-                <h2 className="text-xl font-bold text-right" dir="rtl" lang="ar">
-                  شركة المركز الدولي
-                </h2>
-                <h2 className="text-xl font-bold text-right" dir="rtl" lang="ar">
-                  للمسح والتفتيش ذ. م. م
-                </h2>
-                <div className="w-full h-1 bg-yellow-400 mt-1"></div>
-              </div>
-            </div>
-            
-            {/* Certificate Title */}
-            <div className="text-center mt-6">
-              <h1 className="text-4xl font-bold italic">CERTIFICATE OF TRAINING</h1>
-              <p className="text-xl italic mt-2">Proudly Presented to</p>
-            </div>
+            {/* Added 2mm (approximately 8px) spacing after "Proudly presented to" */}
+            <div className="h-[8px]"></div>
             
             {/* Trainee Photo and Information */}
-            <div className="flex flex-col items-center mt-4">
-              <div className="w-24 h-32 border border-gray-300 flex items-center justify-center bg-gray-100 mb-4">
-                {trainee.photo_path ? (
+            <div className="flex flex-col items-center">
+              {/* Photo box - using data URL for better PDF compatibility */}
+              <div className="w-[68px] h-[68px] border-2 border-gray-300 flex items-center justify-center bg-gray-50">
+                {photoDataUrl ? (
                   <img 
-                    src={`${API_URL}/${trainee.photo_path}`} 
+                    src={photoDataUrl} 
                     alt="Trainee" 
                     className="w-full h-full object-cover"
+                    crossOrigin="anonymous"
                   />
+                ) : trainee.photo_path ? (
+                  <div 
+                    className="w-full h-full bg-cover bg-center" 
+                    style={{ 
+                      backgroundImage: `url(${API_URL}/${trainee.photo_path})`,
+                      backgroundRepeat: 'no-repeat'
+                    }}
+                  ></div>
                 ) : (
-                  <span className="text-sm text-center text-gray-500">PHOTO</span>
+                  <span className="text-sm text-center text-gray-500">Photo</span>
                 )}
               </div>
               
-              <h2 className="text-2xl font-bold italic">
-                Mr. {trainee.name} ({trainee.civil_id})
-              </h2>
-              <p className="text-xl italic mt-2">
-                of {trainee.company_name}
-              </p>
-              
-              <p className="text-xl italic mt-4">
-                is trained, assessed & certified in <span className="font-semibold">{registration?.training_course?.title || 'Unnamed Course'}</span> on {formatDate(trainee.training_completion_date || registration.training_date)}
-              </p>
-              
-              <p className="text-xl italic mt-2">
-                This certificate is valid up to {formatDate(trainee.certificate_validation_date || calculateValidationDate())}
-              </p>
+              {/* Trainee name and details - reduced spacing */}
+              <div className="text-center -mt-1" style={marckScriptStyle}>
+                <h2 className="text-3xl">
+                  {`Mr. ${trainee.name} (${trainee.civil_id})`}
+                </h2>
+                <p className="text-2xl -mt-2">
+                  {`of ${toSentenceCase(trainee.company_name)}`}
+                </p>
+                
+                {/* Container for is trained text */}
+                <div>
+                  <p className="text-2xl mt-1 leading-none">
+                    {toSentenceCase(`is trained, assessed & certified in ${registration?.training_course?.title || 'unnamed course'}`)} on {formatDate(trainee.training_completion_date || registration.training_date)}
+                  </p>
+                  
+                  {/* Pull up this line by 2mm (negative margin of about -8px) */}
+                  <p className="text-2xl leading-none -mt-[8px]">
+                    {toSentenceCase("this certificate is valid up to")} {formatDate(trainee.certificate_validation_date || calculateValidationDate())}
+                  </p>
+                </div>
+              </div>
             </div>
             
-            {/* Signatures */}
-            <div className="flex justify-between px-20 mt-12">
+            {/* Signature and QR section - aligned to the same height */}
+            <div className="absolute bottom-32 left-0 right-0 flex justify-between px-16">
+              {/* Left signature with image */}
               <div className="text-center w-64">
-                <p className="text-sm italic">&lt;&lt; Signature &gt;&gt;</p>
-                <div className="border-t border-black mt-2"></div>
-                <p className="mt-1">INTREX Official's Name</p>
-                <p className="text-sm">For and on behalf of INTREX</p>
+                <div className="h-16 flex items-center justify-center">
+                  <img 
+                    src="/signature1.png" 
+                    alt="Official Signature" 
+                    className="h-10 object-contain"
+                    crossOrigin="anonymous"
+                  />
+                </div>
+                <div className="w-full border-t border-black"></div>
+                <p className="text-lg" style={marckScriptStyle}>{toSentenceCase("intrex official's name")}</p>
               </div>
               
+              {/* QR Code - smaller size */}
+              <div className="flex flex-col items-center justify-center">
+                <QRCode value={verificationUrl} size={70} />
+                <p className="text-sm mt-1 text-center" style={marckScriptStyle}>
+                  {toSentenceCase("certificate no")}: {certNumber}
+                </p>
+              </div>
+              
+              {/* Right signature with image */}
               <div className="text-center w-64">
-                <p className="text-sm italic">&lt;&lt; Signature &gt;&gt;</p>
-                <div className="border-t border-black mt-2"></div>
-                <p className="mt-1">Instructor Name</p>
-                <p className="text-sm">Instructor</p>
+                <div className="h-16 flex items-center justify-center">
+                  <img 
+                    src="/signature2.png" 
+                    alt="Instructor Signature" 
+                    className="h-10 object-contain"
+                    crossOrigin="anonymous"
+                  />
+                </div>
+                <div className="w-full border-t border-black"></div>
+                <p className="text-lg" style={marckScriptStyle}>{toSentenceCase("instructor name")}</p>
               </div>
-            </div>
-            
-            {/* QR Code and Certificate Number */}
-            <div className="absolute bottom-16 right-8">
-              <QRCode value={verificationUrl} size={80} />
-              <p className="text-xs mt-1 text-center">Certificate No. {certNumber}</p>
-            </div>
-            
-            {/* Footer with accreditation logos */}
-            <div className="absolute bottom-0 left-0 right-0">
-              <div className="flex justify-center items-center bg-white">
-                <img 
-                  src="/accreditation-logos.png" 
-                  alt="Accreditation Logos" 
-                  className="h-12 object-contain"
-                />
-              </div>
-              <div className="h-6 bg-yellow-400"></div>
             </div>
           </div>
         </CardContent>

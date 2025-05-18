@@ -166,7 +166,8 @@ export function CertificateGenerator({ trainingRegistrationId, traineeId }: Cert
       pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
       
       // Save PDF
-      const fileName = `${trainee?.name.replace(/\s+/g, '_')}_Certificate_${new Date().toISOString().split('T')[0]}.pdf`
+      // const fileName = `${trainee?.name.replace(/\s+/g, '_')}_Certificate_${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `${certNumber}.pdf`
       pdf.save(fileName)
       
       toast({
